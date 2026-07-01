@@ -1,7 +1,7 @@
 import pandas as pd
 import streamlit as st
 from io import BytesIO
-from utils import create_pandas_dataframe_agent, MOONSHOT_API_KEY
+
 
 
 # ==================== 数据库绩效函数（原有，不变）====================
