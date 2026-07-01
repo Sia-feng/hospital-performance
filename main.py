@@ -1,10 +1,9 @@
 import pandas as pd
 import streamlit as st
 from io import BytesIO
-Import openpyxl
 
 
-# ==================== 数据库绩效函数（原有，不变）====================
+# ==================== 数据库绩效函数 ====================
 
 def calculate_performance(row, a, base_price):
     """计算个人总绩效"""
@@ -109,7 +108,7 @@ def process_database_excel(uploaded_file, database_performance):
 def process_followup_excel(uploaded_file, followup_performance):
     """
     读取随访绩效Excel并计算
-    Excel列：姓名、工作条目、随访病例、微信入群、随访绩效(空)
+    Excel列：姓名、工作条目、随访病例、微信入群
     """
     df = pd.read_excel(uploaded_file)
 
@@ -131,36 +130,16 @@ def process_followup_excel(uploaded_file, followup_performance):
     df['微信入群'] = pd.to_numeric(df['微信入群'], errors='coerce').fillna(0)
     df['工作条目'] = df['工作条目'].fillna('').astype(str)
 
-    # ========== 动态计算绩效基数 ==========
-    # 从Excel数据中提取规则：
-    # 1. 微信入群：直接读取"微信入群"列的值
-    # 2. 随访管理：工作条目含"随访管理"的人员，按比例分配
-    # 3. 随访病例：随访病例数 × 绩效基数
-
     # 计算随访病例总绩效基数
     total_case_base = df['随访病例'].sum()
 
     # 计算微信入群总额
     total_wechat = df['微信入群'].sum()
 
-    # 随访管理人数
-    mgmt_count = df['工作条目'].str.contains('随访管理', na=False).sum()
-
-    # 绩效基数单价 = (随访绩效总额 - 微信入群总额) / (病例总基数 + 管理系数)
-    # 管理系数：每人按病例基数的比例，这里简化为按固定比例
-    # 根据你的数据：随访管理绩效 = 随访绩效总额 × 13%（郎燕102.31/787≈13%）
-
-    # 重新设计计算逻辑：
-    # 随访绩效 = 微信入群 + 随访管理 + 随访病例绩效
-
-    # 先计算微信入群（固定值）
-    df['微信入群绩效'] = df['微信入群']
-
-    # 随访管理绩效：从剩余金额中按比例分配
     # 剩余金额 = 随访绩效总额 - 微信入群总额
     remaining = followup_performance - total_wechat
 
-    # 随访管理占剩余的13%（根据郎燕102.31/(787-16)≈13%）
+    # 随访管理占剩余的13%
     mgmt_ratio = 0.13
     mgmt_total = remaining * mgmt_ratio
 
@@ -170,13 +149,13 @@ def process_followup_excel(uploaded_file, followup_performance):
     # 病例绩效基数单价
     case_base_price = case_total / total_case_base if total_case_base > 0 else 0
 
-    # 计算随访管理绩效（均分给所有管理人员，或按规则）
-    # 根据图片：只有郎燕是随访管理，所以全部给她
+    # 先计算微信入群（固定值）
+    df['微信入群绩效'] = df['微信入群']
+
+    # 计算随访管理绩效
     df['随访管理绩效'] = 0.0
     mgmt_mask = df['工作条目'].str.contains('随访管理', na=False)
     if mgmt_mask.sum() > 0:
-        # 如果有多个管理人员，可以按比例分配，这里先全部给标记的人
-        # 或者按人头均分
         df.loc[mgmt_mask, '随访管理绩效'] = mgmt_total / mgmt_mask.sum()
 
     # 计算随访病例绩效
@@ -210,6 +189,10 @@ st.set_page_config(page_title="西山医院绩效系统", page_icon="🏥", layo
 
 st.title("💡 医院胸痛中心数据库绩效系统")
 
+# ========== 初始化 session_state ==========
+if "calc_mode" not in st.session_state:
+    st.session_state.calc_mode = None
+
 # ========== 侧边栏参数设置 ==========
 st.sidebar.subheader("⚙️ 绩效参数设置")
 
@@ -233,16 +216,15 @@ st.sidebar.markdown("---")
 # 两个计算按钮
 st.sidebar.subheader("🚀 选择计算类型")
 
-if 'calc_mode' not in st.session_state:
-    st.session_state.calc_mode = None
-
 col1, col2 = st.sidebar.columns(2)
 with col1:
     if st.button("📊 数据库绩效", use_container_width=True):
         st.session_state.calc_mode = 'database'
+        st.rerun()
 with col2:
     if st.button("📋 随访绩效", use_container_width=True):
         st.session_state.calc_mode = 'followup'
+        st.rerun()
 
 # ========== 数据库绩效模式 ==========
 if st.session_state.calc_mode == 'database':
@@ -360,11 +342,11 @@ elif st.session_state.calc_mode == 'followup':
                 st.metric("👥 总人数", f"{len(df)}人")
             with col2:
                 st.metric("💰 随访绩效总额", f"{df['随访绩效'].sum():.2f}元")
-            with col3:
+            with c3:
                 st.metric("💵 随访实发总数", f"{df['随访实发'].sum()}元")
-            with col4:
+            with c4:
                 st.metric("📊 应发随访绩效", f"{FOLLOWUP_PERFORMANCE}元")
-            with col5:
+            with c5:
                 st.metric("📋 病例基数单价", f"{case_base_price:.2f}元")
 
             # 校验
@@ -483,37 +465,3 @@ else:
       - 随访病例 = 随访病例数 × 动态计算的病例基数单价
     """)
 
-# ==================== AI 问答 ====================
-st.divider()
-st.subheader("🤖 AI 智能问答")
-query = st.text_area("💬 请输入问题：")
-button = st.button("🚀 AI生成回答")
-
-if button:
-    if "df_db" not in st.session_state and "df_followup" not in st.session_state:
-        st.info("请先上传数据并计算绩效")
-    else:
-        with st.spinner("AI正在思考中..."):
-            context_parts = []
-            if "df_db" in st.session_state:
-                a_info = f"本月a={st.session_state.get('a', 0):.0f}，基数单价={st.session_state.get('base_price', 0):.2f}元"
-                context_parts.append(f"数据库绩效：{a_info}")
-            if "df_followup" in st.session_state:
-                df_f = st.session_state["df_followup"]
-                context_parts.append(
-                    f"随访绩效：总额{df_f['随访绩效'].sum():.2f}元，{len(df_f[df_f['随访绩效'] > 0])}人参与")
-
-            query_with_context = f"{'；'.join(context_parts)}。{query}"
-
-            response_dict = create_pandas_dataframe_agent(
-                MOONSHOT_API_KEY,
-                st.session_state.get("df_db") or st.session_state.get("df_followup"),
-                query_with_context
-            )
-            if "answer" in response_dict:
-                st.write(response_dict["answer"])
-            if "table" in response_dict:
-                st.table(pd.DataFrame(response_dict["table"]["data"],
-                                      columns=response_dict["table"]["columns"]))
-            if not any(k in response_dict for k in ["answer", "table", "bar", "line", "scatter"]):
-                st.write(response_dict)
