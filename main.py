@@ -337,10 +337,10 @@ elif st.session_state.calc_mode == 'followup':
 
             # 关键指标
             st.subheader("📈 随访绩效关键指标")
-            col1, col2, col3, col4, col5 = st.columns(5)
-            with col1:
+            c1, c2, c3, c4, c5 = st.columns(5)
+            with c1:
                 st.metric("👥 总人数", f"{len(df)}人")
-            with col2:
+            with c2:
                 st.metric("💰 随访绩效总额", f"{df['随访绩效'].sum():.2f}元")
             with c3:
                 st.metric("💵 随访实发总数", f"{df['随访实发'].sum()}元")
@@ -464,4 +464,3 @@ else:
       - 随访管理 = 工作条目含"随访管理"的人员，按比例分配
       - 随访病例 = 随访病例数 × 动态计算的病例基数单价
     """)
-
