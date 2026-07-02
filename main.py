@@ -204,11 +204,20 @@ TOTAL_PERFORMANCE = st.sidebar.number_input(
     help="每月胸痛中心总绩效，如3447"
 )
 
-# 自动计算分配
-DATABASE_PERFORMANCE = round(TOTAL_PERFORMANCE * 0.75, 2)
-FOLLOWUP_PERFORMANCE = round(TOTAL_PERFORMANCE * 0.25, 2)
+# 陈主任固定扣除
+CHEN_DEDUCTION = 300
+
+# 扣除后剩余
+REMAINING = TOTAL_PERFORMANCE - CHEN_DEDUCTION
+
+# 分配比例
+DATABASE_PERFORMANCE = round(REMAINING * 0.75, 2)
+FOLLOWUP_PERFORMANCE = round(REMAINING * 0.25, 2)
 
 st.sidebar.markdown("---")
+st.sidebar.markdown(f"**总绩效**: `{TOTAL_PERFORMANCE}` 元")
+st.sidebar.markdown(f"**陈主任扣除**: `{CHEN_DEDUCTION}` 元")
+st.sidebar.markdown(f"**剩余分配**: `{REMAINING}` 元")
 st.sidebar.markdown(f"**数据库绩效(75%)**: `{DATABASE_PERFORMANCE}` 元")
 st.sidebar.markdown(f"**随访绩效(25%)**: `{FOLLOWUP_PERFORMANCE}` 元")
 st.sidebar.markdown("---")
@@ -416,11 +425,14 @@ elif st.session_state.calc_mode == 'followup':
                     writer, sheet_name='全部人员', index=False)
                 # Sheet3: 配置参数
                 config_df = pd.DataFrame({
-                    '项目': ['总绩效', '数据库绩效(75%)', '随访绩效(25%)',
+                    '项目': ['总绩效', '陈主任扣除', '剩余分配',
+                             '数据库绩效(75%)', '随访绩效(25%)',
                              '病例基数单价', '随访管理总额', '微信入群总额',
                              '随访绩效实发', '随访绩效应发', '差异'],
                     '数值': [
                         TOTAL_PERFORMANCE,
+                        CHEN_DEDUCTION,
+                        REMAINING,
                         DATABASE_PERFORMANCE,
                         FOLLOWUP_PERFORMANCE,
                         round(case_base_price, 4),
@@ -452,11 +464,17 @@ else:
 
     st.subheader("📖 使用说明")
     st.markdown("""
-    **1. 数据库绩效（75%）**
+    **绩效分配规则：**
+    1. 总绩效先扣除300元（陈主任做PPT和登记高危胸痛）
+    2. 剩余部分按75%/25%分配：
+       - 数据库绩效 = 剩余 × 75%
+       - 随访绩效 = 剩余 × 25%
+    
+    **3. 数据库绩效（75%）**
     - 上传包含门诊登记、门诊收入院、门诊建档等数据的Excel
     - 系统自动计算工作量绩效和质控绩效
 
-    **2. 随访绩效（25%）**
+    **4. 随访绩效（25%）**
     - 上传包含姓名、工作条目、随访病例、微信入群的Excel
     - 系统自动从Excel读取数据计算随访绩效
     - 计算规则：
