@@ -6,7 +6,7 @@ from io import BytesIO
 # ==================== 数据库绩效函数 ====================
 
 def calculate_performance(row, a, base_price):
-    """计算个人总绩效"""
+    """计算个人总绩效 - 全部按基数分配"""
     门诊登记 = float(row['门诊登记']) if pd.notna(row['门诊登记']) else 0
     门诊收入院 = float(row['门诊收入院']) if pd.notna(row['门诊收入院']) else 0
     门诊建档 = float(row['门诊建档']) if pd.notna(row['门诊建档']) else 0
@@ -15,6 +15,7 @@ def calculate_performance(row, a, base_price):
     典型病例 = float(row['典型病例']) if pd.notna(row['典型病例']) else 0
     工作条目 = str(row['工作条目']) if pd.notna(row['工作条目']) else ''
 
+    # 基础工作量绩效
     work_score = (
             门诊登记 * 0.1 +
             门诊收入院 * 1 +
@@ -24,22 +25,19 @@ def calculate_performance(row, a, base_price):
     )
     work_performance = work_score * base_price
 
+    # 质控绩效 - 全部按基数分配
     qc_performance = 0
-    fixed_bonus = 0
-
     if '数据录入' in 工作条目:
         qc_performance = a * 1.7 * base_price
-        fixed_bonus = 300
     elif '审核' in 工作条目:
         qc_performance = a * 0.2 * base_price
     elif '归档' in 工作条目:
         qc_performance = a * 0.2 * 0.8 * base_price
 
-    case_bonus = 0
-    if 典型病例 > 0 and '数据录入' not in 工作条目:
-        case_bonus = 300
+    # 典型病例 - 按基数算（如果典型病例列有值）
+    case_bonus = 典型病例 * base_price if 典型病例 > 0 else 0
 
-    return round(work_performance + qc_performance + fixed_bonus + case_bonus, 2)
+    return round(work_performance + qc_performance + case_bonus, 2)
 
 
 def find_header_row(uploaded_file):
@@ -76,8 +74,10 @@ def process_database_excel(uploaded_file, database_performance):
 
     df = df.rename(columns=col_mapping)
 
+    # a = 门诊建档 + 急诊建档
     a = df['门诊建档'].fillna(0).astype(float).sum() + df['急诊建档'].fillna(0).astype(float).sum()
 
+    # 工作量基数
     work_base_sum = (
             df['门诊登记'].fillna(0).astype(float).sum() * 0.1 +
             df['门诊收入院'].fillna(0).astype(float).sum() * 1 +
@@ -86,6 +86,7 @@ def process_database_excel(uploaded_file, database_performance):
             df['急诊未入院'].fillna(0).astype(float).sum() * 1
     )
 
+    # 质控基数
     qc_base_sum = 0
     if any('数据录入' in str(x) for x in df['工作条目'].fillna('')):
         qc_base_sum += a * 1.7
@@ -95,9 +96,21 @@ def process_database_excel(uploaded_file, database_performance):
         qc_base_sum += a * 0.2 * 0.8
 
     total_base = work_base_sum + qc_base_sum
-    base_price = (database_performance - 300) / total_base if total_base > 0 else 0
 
+    # 关键修改：直接用数据库绩效除以总基数，不扣300
+    base_price = database_performance / total_base if total_base > 0 else 0
+
+    # 计算绩效（基数部分）
     df['总绩效'] = df.apply(lambda row: calculate_performance(row, a, base_price), axis=1)
+    
+    # 郝芳额外加300元固定奖励（数据录入岗位）
+    df['固定奖励'] = 0.0
+    data_entry_mask = df['工作条目'].str.contains('数据录入', na=False)
+    if data_entry_mask.sum() > 0:
+        df.loc[data_entry_mask, '固定奖励'] = 300.0
+    
+    # 最终绩效 = 基数绩效 + 固定奖励
+    df['总绩效'] = df['总绩效'] + df['固定奖励']
     df['个人实发'] = df['总绩效'].round(0).astype(int)
 
     return df, a, base_price, work_base_sum, qc_base_sum, total_base
@@ -204,21 +217,26 @@ TOTAL_PERFORMANCE = st.sidebar.number_input(
     help="每月胸痛中心总绩效，如3447"
 )
 
-# 陈主任固定扣除
-CHEN_DEDUCTION = 300
+# 固定扣除（郝芳做PPT等）
+FIXED_DEDUCTION = st.sidebar.number_input(
+    "固定扣除（元）",
+    value=300,
+    step=1,
+    help="质控会、典型病例讨论、门诊幻灯、绩效统计、ACS汇总表等固定工作"
+)
 
 # 扣除后剩余
-REMAINING = TOTAL_PERFORMANCE - CHEN_DEDUCTION
+REMAINING = TOTAL_PERFORMANCE - FIXED_DEDUCTION
 
 # 分配比例
-DATABASE_PERFORMANCE = round(REMAINING * 0.75, 2)
+DATABASE_PERFORMANCE = round(REMAINING * 0.75 + FIXED_DEDUCTION, 2)
 FOLLOWUP_PERFORMANCE = round(REMAINING * 0.25, 2)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"**总绩效**: `{TOTAL_PERFORMANCE}` 元")
-st.sidebar.markdown(f"**陈主任扣除**: `{CHEN_DEDUCTION}` 元")
+st.sidebar.markdown(f"**固定扣除**: `{FIXED_DEDUCTION}` 元")
 st.sidebar.markdown(f"**剩余分配**: `{REMAINING}` 元")
-st.sidebar.markdown(f"**数据库绩效(75%)**: `{DATABASE_PERFORMANCE}` 元")
+st.sidebar.markdown(f"**数据库绩效(75%+固定)**: `{DATABASE_PERFORMANCE}` 元")
 st.sidebar.markdown(f"**随访绩效(25%)**: `{FOLLOWUP_PERFORMANCE}` 元")
 st.sidebar.markdown("---")
 
@@ -279,7 +297,7 @@ if st.session_state.calc_mode == 'database':
             # 绩效明细
             st.subheader("📋 绩效明细")
             display_cols = ['姓名', '工作条目', '门诊登记', '门诊收入院', '门诊建档',
-                            '急诊建档', '急诊未入院', '典型病例', '总绩效', '个人实发']
+                            '急诊建档', '急诊未入院', '典型病例', '固定奖励', '总绩效', '个人实发']
             available_cols = [c for c in display_cols if c in df.columns]
 
 
@@ -425,13 +443,13 @@ elif st.session_state.calc_mode == 'followup':
                     writer, sheet_name='全部人员', index=False)
                 # Sheet3: 配置参数
                 config_df = pd.DataFrame({
-                    '项目': ['总绩效', '陈主任扣除', '剩余分配',
-                             '数据库绩效(75%)', '随访绩效(25%)',
+                    '项目': ['总绩效', '固定扣除', '剩余分配',
+                             '数据库绩效(75%+固定)', '随访绩效(25%)',
                              '病例基数单价', '随访管理总额', '微信入群总额',
                              '随访绩效实发', '随访绩效应发', '差异'],
                     '数值': [
                         TOTAL_PERFORMANCE,
-                        CHEN_DEDUCTION,
+                        FIXED_DEDUCTION,
                         REMAINING,
                         DATABASE_PERFORMANCE,
                         FOLLOWUP_PERFORMANCE,
@@ -465,20 +483,22 @@ else:
     st.subheader("📖 使用说明")
     st.markdown("""
     **绩效分配规则：**
-    1. 总绩效先扣除300元（陈主任做PPT和登记高危胸痛）
+    1. 总绩效先扣除固定部分（郝芳做PPT、典型病例讨论、门诊幻灯、绩效统计、ACS汇总表）
     2. 剩余部分按75%/25%分配：
-       - 数据库绩效 = 剩余 × 75%
+       - 数据库绩效 = 剩余 × 75% + 固定扣除
        - 随访绩效 = 剩余 × 25%
     
-    **3. 数据库绩效（75%）**
-    - 上传包含门诊登记、门诊收入院、门诊建档等数据的Excel
-    - 系统自动计算工作量绩效和质控绩效
-
+    **3. 数据库绩效计算：**
+    - 绩效基数 = 工作量基数 + 质控基数
+    - 工作量基数 = 门诊登记×0.1 + 门诊收入院×1 + 门诊建档×0.5 + 急诊建档×1 + 急诊未入院×1
+    - 质控基数：
+      - 数据录入：a × 1.7
+      - 审核：a × 0.2
+      - 归档：a × 0.2 × 0.8
+    - 绩效基数单价 = 数据库绩效 / 总基数
+    - 数据录入岗位额外加300元固定奖励
+    
     **4. 随访绩效（25%）**
     - 上传包含姓名、工作条目、随访病例、微信入群的Excel
     - 系统自动从Excel读取数据计算随访绩效
-    - 计算规则：
-      - 微信入群 = 直接读取"微信入群"列
-      - 随访管理 = 工作条目含"随访管理"的人员，按比例分配
-      - 随访病例 = 随访病例数 × 动态计算的病例基数单价
     """)
