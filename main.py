@@ -98,7 +98,7 @@ def process_database_excel(uploaded_file, database_performance):
     total_base = work_base_sum + qc_base_sum
 
     # 关键修改：直接用数据库绩效除以总基数，不扣300
-    base_price = database_performance / total_base if total_base > 0 else 0
+    base_price = database_performance-300 / total_base if total_base > 0 else 0
 
     # 计算绩效（基数部分）
     df['总绩效'] = df.apply(lambda row: calculate_performance(row, a, base_price), axis=1)
@@ -229,8 +229,8 @@ FIXED_DEDUCTION = st.sidebar.number_input(
 REMAINING = TOTAL_PERFORMANCE - FIXED_DEDUCTION
 
 # 分配比例
-DATABASE_PERFORMANCE = round((REMAINING-300) * 0.75 + FIXED_DEDUCTION, 2)
-FOLLOWUP_PERFORMANCE = round((REMAINING-300) * 0.25, 2)
+DATABASE_PERFORMANCE = round((REMAINING-FIXED_DEDUCTION) * 0.75 + FIXED_DEDUCTION, 2)
+FOLLOWUP_PERFORMANCE = round((REMAINING-FIXED_DEDUCTION) * 0.25, 2)
 
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"**总绩效**: `{TOTAL_PERFORMANCE}` 元")
